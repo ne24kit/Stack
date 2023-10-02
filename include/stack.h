@@ -9,6 +9,7 @@
 #define INIT_CAPACITY 25
 #define POISON INT_MIN
 
+
 typedef int elem_t;
 typedef unsigned long long canary_t;
 
@@ -19,6 +20,7 @@ typedef struct{
     size_t capacity = 0;
     int hash_value = 0;
     int hash_struct = 0;
+    bool is_stack_destroyed = false;
     int hash_data = 0;
     canary_t right_canary = 0;
 }Stack;
@@ -45,7 +47,8 @@ enum err{
     ERR_LEFT_DATA_CANARY  =  128,
     ERR_RIGHT_DATA_CANARY =  256,
     ERR_DATA_HASH         =  512,
-    ERR_STR_HASH          = 1024  
+    ERR_STR_HASH          = 1024,
+    ERR_STACK_DTOR        = 2048
 };
 
 typedef struct{
@@ -59,7 +62,7 @@ int StackVerification(Stack *stk);
 size_t StackCtor(Stack *stk, size_t capacity, int line_init,
                 const char *func_init, const char *file_init);
 
-size_t StackDtor(Stack *stk);
+int StackDtor(Stack *stk);
 
 int GetHash(const void * ptr, size_t size_memory);
 void FillHash(Stack *stk);

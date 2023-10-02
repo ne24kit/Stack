@@ -6,9 +6,9 @@ const size_t increasing_capacity = 2;
 DebugInfo stk_d_info;
 
 ErrorHandler errors_with_msg[] = {
+    {ERR_STACK,             "Pointer to Stack structure == NULL\n"},
     {ERR_SIZE_CAPACITY,     "capacity <= size\n"},
     {ERR_DATA,              "Pointer to data == NULL\n"},
-    {ERR_STACK,             "Pointer to Stack structure == NULL\n"},
     {ERR_CAPACITY,          "Pointer to capacity == NULL\n"},
     {ERR_POP,               "pop try to take, but size == 0\n"},
     {ERR_LEFT_STR_CANARY,   "Left canary (of struct) changes\n"},
@@ -16,7 +16,8 @@ ErrorHandler errors_with_msg[] = {
     {ERR_LEFT_DATA_CANARY,  "Left canary (of data) changes\n"},
     {ERR_RIGHT_DATA_CANARY, "Right canary (of data) changes\n"},
     {ERR_DATA_HASH,         "Hash (of data) mismatch\n"},
-    {ERR_STR_HASH,          "Hash (of struct) mismatch\n"}
+    {ERR_STR_HASH,          "Hash (of struct) mismatch\n"},
+    {ERR_STACK_DTOR,        "Stack is destoyed\n"}
 };
 
 void FillHash(Stack *stk)
@@ -69,13 +70,19 @@ int GetHash(const void * ptr, size_t size_memory)
 int StackVerification(Stack *stk)
 {
     int errors = 0;
-
+    
+    if(!stk){
+        errors |= ERR_STACK;
+        return errors;
+    }
+    if(stk->is_stack_destroyed) {
+        errors |= ERR_STACK_DTOR;
+        return errors;
+    }
     if(stk->size > stk->capacity)
         errors |= ERR_SIZE_CAPACITY;
     if(!stk->data)
         errors |= ERR_DATA;
-    if(!stk)
-        errors |= ERR_STACK;
     if(!stk->capacity)
         errors |= ERR_CAPACITY;
     if(stk->left_canary != canary_value)
@@ -97,13 +104,20 @@ int StackVerification(Stack *stk)
 size_t StackCtor(Stack *stk, size_t capacity, int line_init, 
                     const char *func_init, const char *file_init)
 {
+    if(!stk){
+        STACK_DUMP(stk, ERR_STACK);
+        return ERR_STACK;
+    }
+    
     stk_d_info.line_init = line_init;
     stk_d_info.func_init = func_init;
     stk_d_info.file_init = file_init;
 
+    
+
     stk->left_canary = canary_value;
     stk->right_canary = canary_value;
-    
+
     stk->data = (elem_t *)calloc(capacity * sizeof(elem_t) + 
                                 + 2 * sizeof(canary_t), sizeof(char));
     stk->capacity = capacity;
@@ -114,18 +128,32 @@ size_t StackCtor(Stack *stk, size_t capacity, int line_init,
     *(canary_t *)(stk->data + stk->capacity) = canary_value;  
     
     FillHash(stk);
+    
+    int errors = StackVerification(stk);
+    if(errors){
+        STACK_DUMP(stk, errors);
+        return errors;
+    }
 
     return StackVerification(stk);
 }
 
-size_t StackDtor(Stack *stk)
+int StackDtor(Stack *stk)
 {
+    int errors = StackVerification(stk);
+    if(errors){
+        STACK_DUMP(stk, errors);
+        return errors;
+    }
+    
     free((canary_t *)stk->data - 1);
+    stk->left_canary = 0;
+    stk->right_canary = 0; 
     stk->size = 0;
     stk->capacity = 0;
-    stk = NULL;
+    stk->is_stack_destroyed = true;
     
-    return 0;
+    return errors;
 }
 
 size_t StackRealloc(Stack *stk)
@@ -196,8 +224,7 @@ size_t StackPush(Stack *stk, elem_t value)
     stk->data[stk->size++] = value;
 
     FillHash(stk);
-    STACK_DUMP(stk, StackVerification(stk));
-    return StackVerification(stk);
+    return errors;
 }
 
 size_t StackPop(Stack *stk, elem_t *ret_value)
@@ -217,8 +244,7 @@ size_t StackPop(Stack *stk, elem_t *ret_value)
     
     FillHash(stk);
     StackRealloc(stk);  
-    
-    STACK_DUMP(stk, StackVerification(stk));
+
     return StackVerification(stk);
 }
 
@@ -228,12 +254,17 @@ void StackDump(Stack *stk, size_t errors, const char *stk_name, int line_err,
     if(errors)
         printf("ERRORS: \n");
 
+    
     for(size_t i = 0; 
         i < sizeof(errors_with_msg) / sizeof(errors_with_msg[0]); i++){
 
         if (errors & errors_with_msg[i].stk_err)
             printf("%s", errors_with_msg[i].msg);
+        
     }
+
+    if(errors & errors_with_msg[0].stk_err)
+        return;
         
 
     printf("STACK[%p] \'%s\' from %s(%d) %s called by %s(%d) %s\n", stk, 
@@ -255,6 +286,6 @@ void StackDump(Stack *stk, size_t errors, const char *stk_name, int line_err,
     printf("data[%p]\n", stk->data);
 
     for(size_t i = 0; i < stk->capacity; i++)
-        printf("%c[%2ld] = %2d\n", (i < stk->size && stk->data[i] != POISON) ?
+        printf("\t%c[%2ld] = %2d\n", (i < stk->size && stk->data[i] != POISON) ?
                                     '*' : ' ', i, stk->data[i]);
 }
